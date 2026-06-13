@@ -1,0 +1,6 @@
+{
+  "name": "Comptines Knowledge Corpus",
+  "description": "Base de connaissances d'héritage oral multilingue, d'annotations cognitives et studio de prompt-pipelines pour RAG et LLMs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
