@@ -13,6 +13,75 @@ const PORT = 3000;
 // Shared in-memory list seeded with our initial dataset
 let rhymesCollection: NurseryRhyme[] = [...SEEDED_RHYMES];
 
+// Parser helper for Client IP address
+const getClientIp = (req: express.Request): string => {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    if (typeof forwarded === "string") return forwarded.split(",")[0].trim();
+    if (Array.isArray(forwarded)) return forwarded[0].trim();
+  }
+  return req.socket.remoteAddress || "unknown-ip";
+};
+
+// Rate limiting in-memory store (max 10 translations per IP per hour)
+const rateLimits = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string): { allowed: boolean; remaining: number; resetTime: number } {
+  const now = Date.now();
+  const limitWindow = 3600 * 1000; // 1 hour
+  const record = rateLimits.get(ip);
+
+  if (!record || now > record.resetTime) {
+    const newRecord = { count: 1, resetTime: now + limitWindow };
+    rateLimits.set(ip, newRecord);
+    return { allowed: true, remaining: 9, resetTime: newRecord.resetTime };
+  }
+
+  if (record.count >= 10) {
+    return { allowed: false, remaining: 0, resetTime: record.resetTime };
+  }
+
+  record.count += 1;
+  return { allowed: true, remaining: 10 - record.count, resetTime: record.resetTime };
+}
+
+// 7-day Cache in-memory store for translations
+interface CacheEntry {
+  data: any;
+  expiry: number;
+}
+const translationCache = new Map<string, CacheEntry>();
+
+function getCache(key: string): any | null {
+  const entry = translationCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiry) {
+    translationCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCache(key: string, data: any) {
+  const sevenDays = 7 * 24 * 3600 * 1000; // 7 days in ms
+  translationCache.set(key, {
+    data,
+    expiry: Date.now() + sevenDays,
+  });
+}
+
+// Linear/exponential backoff retry helper
+async function generateWithRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries <= 0) throw error;
+    console.warn(`Gemini call failed. Retrying in ${delay}ms... (${retries} retries left) Error:`, error);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return generateWithRetry(fn, retries - 1, delay * 2);
+  }
+}
+
 // Helper to instantiate Gemini client securely
 let aiInstance: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -71,12 +140,61 @@ app.post("/api/rhymes/reset", (req, res) => {
   res.json({ success: true, count: rhymesCollection.length, message: "Corpus reset to default 8 specimen records." });
 });
 
+// POST /reset or POST /api/pipeline/reset-cache to reset caching spaces
+app.post("/reset", (req, res) => {
+  translationCache.clear();
+  console.log("Translation cache cleared by request.");
+  res.json({ success: true, message: "Translation Cache reset successfully." });
+});
+
+app.post("/api/pipeline/reset-cache", (req, res) => {
+  translationCache.clear();
+  console.log("Translation cache cleared by request.");
+  res.json({ success: true, message: "Translation Cache reset successfully." });
+});
+
 // Translation & Adaptation On-The-Fly Endpoint
 app.post("/api/pipeline/translate", async (req, res) => {
-  const { title, lyricsOriginal, sourceLanguage, targetLanguage } = req.body;
+  const { title, lyricsOriginal, sourceLanguage, targetLanguage, style } = req.body;
 
   if (!lyricsOriginal || !targetLanguage) {
     return res.status(400).json({ success: false, error: "Les paroles originales et la langue cible sont requises." });
+  }
+
+  // 1. IP Rate Limiting Check
+  const clientIp = getClientIp(req);
+  const rateLimitResult = checkRateLimit(clientIp);
+  if (!rateLimitResult.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: "Limite de taux atteinte. Les utilisateurs non connectés sont limités à 10 requêtes de traduction par heure pour protéger le service.",
+      resetTime: rateLimitResult.resetTime
+    });
+  }
+
+  // 2. Caching Lookup
+  const cacheKey = `translate_${lyricsOriginal.trim()}_${sourceLanguage || "auto"}_${targetLanguage}_${style || "standard"}`;
+  const cachedData = getCache(cacheKey);
+  if (cachedData) {
+    console.log(`[Cache Hit] Serving cached translation for key: ${cacheKey}`);
+    return res.json({ success: true, result: cachedData, cached: true });
+  }
+
+  // 3. Style Configurations
+  let temp = 0.3;
+  let styleModifier = "";
+  if (style === "soft") {
+    temp = 0.1;
+    styleModifier = "\nCRITÈRE DE STYLE SUPPLÉMENTAIRE (Berceuse Douce): Adoptez un timbre lexical extrêmement réconfortant, doux et feutré de berceuse apaisante pour le sommeil d'un enfant.";
+  } else if (style === "upbeat") {
+    temp = 0.7;
+    styleModifier = "\nCRITÈRE DE STYLE SUPPLÉMENTAIRE (Énergique/Moderne): Intégrez un rythme extrêmement dynamique, joyeux et entraînant, qui invite au mouvement amusant et au tapement de pieds ou de mains.";
+  } else if (style === "silly") {
+    temp = 0.9;
+    styleModifier = "\nCRITÈRE DE STYLE SUPPLÉMENTAIRE (Rigolo/Amusant): Injectez de la fantaisie, d'astucieuses onomatopées bêtes, des associations ludiques drôles et des rimes amusantes propices au rire.";
+  } else if (style === "poetic") {
+    temp = 0.4;
+    styleModifier = "\nCRITÈRE DE STYLE SUPPLÉMENTAIRE (Poésie Classique): Préférez la pureté linguistique littéraire, des vers d'une grande poésie et une sensibilité esthétique soignée.";
   }
 
   try {
@@ -94,6 +212,7 @@ Critères cruciaux d'adaptation :
 1. Conservatisme métrique & chantable : Les paroles de la langue cible doivent être faciles à chanter sur la même mélodie ou cadence rythmique que l'original.
 2. Clarté phonologique & allitérations : Adaptez les sons pour qu'ils soient amusants, faciles à répéter et adaptés aux bébés ou jeunes enfants de la langue cible.
 3. Transposition culturelle : Si certains termes ou concepts sont trop régionaux, transposez-les de manière équivalente et familière pour les enfants réceptifs à la langue cible.
+${styleModifier}
 
 Générez la réponse au format JSON strictly compatible avec ce schéma :
 {
@@ -105,15 +224,24 @@ Générez la réponse au format JSON strictly compatible avec ce schéma :
 
 Retournez UNIQUEMENT du JSON pur, directement parsable, sans balise markdown de bloc de code.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      }
+    // 4. Execution with Retry logic
+    const responseText = await generateWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          temperature: temp
+        }
+      });
+      return response.text || "{}";
     });
 
-    const parsed = JSON.parse(response.text || "{}");
+    const parsed = JSON.parse(responseText);
+    
+    // Save to 7-day in-memory Cache
+    setCache(cacheKey, parsed);
+
     res.json({ success: true, result: parsed });
 
   } catch (error: any) {
@@ -128,6 +256,25 @@ app.post("/api/pipeline/translate-remaster", async (req, res) => {
 
   if (!rhyme || !remasterKey || !targetLanguageKey) {
     return res.status(400).json({ success: false, error: "Missing required parameters (rhyme, remasterKey, targetLanguageKey)." });
+  }
+
+  // 1. IP Rate Limiting Check
+  const clientIp = getClientIp(req);
+  const rateLimitResult = checkRateLimit(clientIp);
+  if (!rateLimitResult.allowed) {
+    return res.status(429).json({
+      success: false,
+      error: "Limite de taux de requêtes atteinte. Veuillez patienter avant d'initier un nouveau calcul de remaster.",
+      resetTime: rateLimitResult.resetTime
+    });
+  }
+
+  // 2. Caching Lookup
+  const cacheKey = `remaster_${rhyme.id || "rhyme"}_${remasterKey}_${targetLanguageKey}`;
+  const cachedData = getCache(cacheKey);
+  if (cachedData) {
+    console.log(`[Cache Hit] Serving cached remaster for key: ${cacheKey}`);
+    return res.json({ success: true, result: cachedData, cached: true });
   }
 
   try {
@@ -181,16 +328,22 @@ GÉNÉREZ LA RÉPONSE AU FORMAT JSON STRICTEMENT COMPATIBLE AVEC CE SCHÉMA :
 
 Retournez UNIQUEMENT du JSON brut, sans balises markdown de code block, pour qu'il soit directement parsable.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-      }
+    const responseText = await generateWithRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+      return response.text || "{}";
     });
 
-    const text = response.text || "{}";
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(responseText);
+
+    // Save to 7-day Cache
+    setCache(cacheKey, parsed);
+
     res.json({ success: true, result: parsed });
 
   } catch (error: any) {

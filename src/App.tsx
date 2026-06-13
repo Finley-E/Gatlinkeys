@@ -37,6 +37,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [backendActive, setBackendActive] = useState(false);
   const [errorNotice, setErrorNotice] = useState("");
+  const [lastDeletedRhyme, setLastDeletedRhyme] = useState<NurseryRhyme | null>(null);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
@@ -102,6 +103,11 @@ export default function App() {
   };
 
   const handleDeleteRhyme = async (id: string) => {
+    const deleted = rhymes.find(r => r.id === id);
+    if (deleted) {
+      setLastDeletedRhyme(deleted);
+    }
+
     // Filter out locally
     const remaining = rhymes.filter(r => r.id !== id);
     setRhymes(remaining);
@@ -115,6 +121,29 @@ export default function App() {
       await fetch(`/api/rhymes/${id}`, { method: "DELETE" });
     } catch (e: any) {
       console.warn("Erreur suppression serveur, effacé localement uniquement.");
+    }
+  };
+
+  const handleUndoDeletion = async () => {
+    if (!lastDeletedRhyme) return;
+    const restored = lastDeletedRhyme;
+    setLastDeletedRhyme(null);
+
+    // Optimistically add back
+    setRhymes(prev => {
+      if (prev.some(r => r.id === restored.id)) return prev;
+      return [...prev, restored];
+    });
+    setSelectedRhymeId(restored.id);
+
+    try {
+      await fetch("/api/rhymes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(restored)
+      });
+    } catch (e: any) {
+      console.warn("Erreur annulation suppression sur le serveur.");
     }
   };
 
@@ -223,9 +252,32 @@ export default function App() {
       </header>
 
       {errorNotice && (
-        <div className="bg-red-50 border-b border-red-200 px-6 py-2.5 text-xs font-mono text-red-800 flex items-center justify-between">
+        <div className="bg-red-50 border-b border-red-200 px-6 py-2.5 text-xs font-mono text-red-800 flex items-center justify-between font-medium">
           <span className="flex items-center gap-1.5"><AlertCircle className="w-4 h-4 text-red-600 shrink-0" /> {errorNotice}</span>
           <button onClick={() => setErrorNotice("")} className="text-red-900 font-bold hover:underline">Fermer</button>
+        </div>
+      )}
+
+      {lastDeletedRhyme && (
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-xs font-sans text-amber-900 flex items-center justify-between animate-fade-in shadow-2xs">
+          <span className="flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>La comptine "<strong>{lastDeletedRhyme.title}</strong>" a été supprimée du corpus.</span>
+          </span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleUndoDeletion}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-mono text-[10px] font-bold uppercase tracking-wider rounded transition shadow-3xs cursor-pointer"
+            >
+              Annuler la suppression
+            </button>
+            <button
+              onClick={() => setLastDeletedRhyme(null)}
+              className="text-amber-800 hover:text-amber-950 text-[11px] font-semibold underline cursor-pointer"
+            >
+              Ignorer
+            </button>
+          </div>
         </div>
       )}
 

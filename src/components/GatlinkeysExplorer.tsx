@@ -25,7 +25,9 @@ import {
   Zap,
   Code2,
   FileJson,
-  Undo
+  Undo,
+  Languages,
+  Volume2
 } from "lucide-react";
 import { NurseryRhyme } from "../types";
 import { LANGUAGE_PROFILES, LanguageProfile } from "../services/languageEngine/languageProfiles";
@@ -60,8 +62,77 @@ export default function GatlinkeysExplorer({ onNavigateToPipeline, installedCoun
     "datasets/comptines/originals": true,
   });
 
-  // Gatlinkeys Subspace Navigation State
-  const [activeSubTab, setActiveSubTab] = useState<"repository" | "language-engine" | "yaml-converter">("repository");
+  // Pre-loaded example rhymes for parents & teachers
+  const PRELOADED_EXAMPLES = [
+    {
+      title: "Twinkle Twinkle Little Star",
+      language: "en",
+      lyrics: `Twinkle, twinkle, little star,
+How I wonder what you are!
+Up above the world so high,
+Like a diamond in the sky.
+
+When the blazing sun is gone,
+When he nothing shines upon,
+Then you show your little light,
+Twinkle, twinkle, all the night.`
+    },
+    {
+      title: "Au Clair de la Lune",
+      language: "fr",
+      lyrics: `Au clair de la lune,
+Mon ami Pierrot,
+Prête-moi ta plume
+Pour écrire un mot.
+
+Ma chandelle est morte,
+Je n'ai plus de feu,
+Ouvre-moi ta porte,
+Pour l'amour de Dieu.`
+    },
+    {
+      title: "Los Pollitos Dicen",
+      language: "es",
+      lyrics: `Los pollitos dicen
+Pío, pío, pío
+Cuando tienen hambre
+Y cuando tienen frío.
+
+La gallina busca
+El maíz y el trigo
+Les da la comida
+Y les presta abrigo.`
+    }
+  ];
+
+  const COMMON_LANGUAGES = [
+    { code: "en", name: "English (Anglais)" },
+    { code: "es", name: "Spanish (Espagnol)" },
+    { code: "fr", name: "French (Français)" },
+    { code: "zh", name: "Mandarin Chinese (Chinois Mandarin)" },
+    { code: "hi", name: "Hindi (Hindi)" },
+    { code: "ar", name: "Arabic (Arabe)" },
+    { code: "pt", name: "Portuguese (Portugais)" },
+    { code: "ja", name: "Japanese (Japonais)" },
+    { code: "de", name: "German (Allemand)" },
+    { code: "it", name: "Italian (Italien)" },
+    { code: "ko", name: "Korean (Coréen)" },
+    { code: "mfe", name: "Moorisien Creole (Créole Mauricien)" }
+  ];
+
+  // Gatlinkeys Subspace Navigation State (Default to translator for parents & teachers)
+  const [activeSubTab, setActiveSubTab] = useState<"translator" | "repository" | "language-engine" | "yaml-converter">("translator");
+
+  // Ultra-friendly translator state
+  const [sourceText, setSourceText] = useState<string>("");
+  const [sourceTitle, setSourceTitle] = useState<string>("");
+  const [sourceLang, setSourceLang] = useState<string>("auto");
+  const [targetLang, setTargetLang] = useState<string>("es");
+  const [selectedStyle, setSelectedStyle] = useState<string>("poetic");
+  const [translatorLoading, setTranslatorLoading] = useState<boolean>(false);
+  const [translatorResult, setTranslatorResult] = useState<IntegratedTranslation | null>(null);
+  const [translatorError, setTranslatorError] = useState<string>("");
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
 
   // Dynamic Language / Remaster Engine State
   const [sandboxRhymeId, setSandboxRhymeId] = useState<string>(rhymes[0]?.id || "FR0001");
@@ -680,6 +751,101 @@ status: collected`,
     }
   };
 
+  // Trigger Friendly Translation & Adaptation Pipeline
+  const handleTriggerInstantTranslate = async (
+    customText?: string,
+    customTitle?: string,
+    customSrcLang?: string
+  ) => {
+    const textToTranslate = customText !== undefined ? customText : sourceText;
+    const titleToUse = customTitle !== undefined ? customTitle : sourceTitle;
+    const srcLangToUse = customSrcLang !== undefined ? customSrcLang : sourceLang;
+
+    if (!textToTranslate.trim()) {
+      setTranslatorError("Veuillez saisir ou choisir des paroles d'origine.");
+      return;
+    }
+
+    setTranslatorError("");
+    setTranslatorResult(null);
+    setTranslatorLoading(true);
+
+    try {
+      const res = await fetch("/api/pipeline/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: titleToUse || "Oeuvre Enfantine",
+          lyricsOriginal: textToTranslate,
+          sourceLanguage: srcLangToUse === "auto" ? "" : srcLangToUse,
+          targetLanguage: targetLang,
+          style: selectedStyle
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "L'adaptation a échoué.");
+      }
+
+      if (data.success && data.result) {
+        setTranslatorResult(data.result);
+      } else {
+        throw new Error(data.error || "L'adaptation s'est interrompue.");
+      }
+    } catch (err: any) {
+      setTranslatorError(err.message || "Erreur de transmission réseau avec le serveur d'adaptation.");
+    } finally {
+      setTranslatorLoading(false);
+    }
+  };
+
+  // Click on one of the 3 preloaded rhymes
+  const handleTranslateExample = (ex: typeof PRELOADED_EXAMPLES[0]) => {
+    setSourceTitle(ex.title);
+    setSourceText(ex.lyrics);
+    setSourceLang(ex.language);
+    
+    // Choose sensible alternate target language
+    const bestTarget = ex.language === "en" ? "es" : "en";
+    setTargetLang(bestTarget);
+    
+    // Trigger immediately on click as requested
+    setTimeout(() => {
+      handleTriggerInstantTranslate(ex.lyrics, ex.title, ex.language);
+    }, 100);
+  };
+
+  // Text-to-Speech using Web Speech API
+  const handleToggleSpeech = (text: string, langCode: string) => {
+    if (!window.speechSynthesis) {
+      alert("La synthèse vocale n'est pas prise en charge sur ce navigateur.");
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Match voices
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find(v => v.lang.toLowerCase().startsWith(langCode.toLowerCase()));
+    if (voice) {
+      utterance.voice = voice;
+    }
+    utterance.lang = langCode;
+
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in" id="gatlinkeys-repository-space">
       
@@ -878,10 +1044,22 @@ status: collected`,
       <div className="xl:col-span-8 space-y-6">
         
         {/* Workspace choosing control buttons */}
-        <div className="flex gap-1.5 p-1 bg-slate-100 rounded-lg select-none border border-slate-200" id="gatlinkeys-subspace-selector">
+        <div className="flex flex-col sm:flex-row gap-1.5 p-1 bg-slate-100 rounded-lg select-none border border-slate-200" id="gatlinkeys-subspace-selector">
+          <button
+            onClick={() => setActiveSubTab("translator")}
+            className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+              activeSubTab === "translator" 
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200/50 font-bold" 
+                : "text-slate-650 hover:text-slate-900 hover:bg-white/40"
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <span>Traducteur Rapide</span>
+          </button>
+
           <button
             onClick={() => setActiveSubTab("repository")}
-            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+            className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
               activeSubTab === "repository" 
                 ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
                 : "text-slate-650 hover:text-slate-900 hover:bg-white/40"
@@ -893,7 +1071,7 @@ status: collected`,
           
           <button
             onClick={() => setActiveSubTab("language-engine")}
-            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+            className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
               activeSubTab === "language-engine" 
                 ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
                 : "text-slate-655 hover:text-slate-900 hover:bg-white/40"
@@ -905,7 +1083,7 @@ status: collected`,
           
           <button
             onClick={() => setActiveSubTab("yaml-converter")}
-            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+            className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
               activeSubTab === "yaml-converter" 
                 ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
                 : "text-slate-655 hover:text-slate-900 hover:bg-white/40"
@@ -915,6 +1093,311 @@ status: collected`,
             <span>Convertisseur YAML</span>
           </button>
         </div>
+
+        {/* SUBTAB 0: INSTANT TRANSLATOR (FEE-LESS & FRIENDLY) */}
+        {activeSubTab === "translator" && (
+          <div className="space-y-6" id="gatlinkeys-instant-translator-panel">
+            {/* Top Overview Card */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+              <h3 className="text-base font-sans font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-500 animate-pulse" />
+                Démonstrateur d'Adaptation Multilingue Libre
+              </h3>
+              <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
+                Traduisez et adaptez instantanément vos comptines tout en préservant scrupuleusement la rythmique d'origine, le tempo et la chantabilité. Vos enfants et élèves pourront chanter verbatim les nouvelles paroles adaptées.
+              </p>
+            </div>
+
+            {/* Step 1: Preloaded examples section */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
+                1. Modèles de Démonstration en un clic
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {PRELOADED_EXAMPLES.map((ex, index) => (
+                  <div key={index} className="bg-slate-50 border border-slate-150 p-4 rounded-lg flex flex-col justify-between hover:border-slate-300 transition group">
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <span className="text-[10px] uppercase font-mono bg-blue-50 border border-blue-200/50 text-blue-800 px-1.5 py-0.5 rounded font-bold">
+                          {ex.language === "en" ? "Anglais" : ex.language === "fr" ? "Français" : "Espagnol"}
+                        </span>
+                      </div>
+                      <h5 className="font-sans font-bold text-slate-800 text-sm mt-2">{ex.title}</h5>
+                      <p className="text-[11px] text-slate-500 font-mono mt-1.5 line-clamp-3 leading-tight select-none">
+                        {ex.lyrics}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleTranslateExample(ex)}
+                      className="w-full mt-4 py-2 bg-blue-600 hover:bg-blue-750 text-white font-mono text-[10px] font-bold uppercase tracking-wider rounded transition flex items-center justify-center gap-1.5 group-hover:shadow-xs shadow-3xs cursor-pointer"
+                    >
+                      <Play className="w-3 h-3 fill-white" />
+                      Traduire en un clic
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Step 2: Custom input & language selector form */}
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
+                2. Formulaire de Configuration Personnalisé
+              </h4>
+
+              <div className="space-y-3">
+                {/* Title */}
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-slate-705 mb-1">Titre de la comptine</label>
+                  <input
+                    type="text"
+                    value={sourceTitle}
+                    onChange={(e) => setSourceTitle(e.target.value)}
+                    placeholder="Saisissez un titre (ex : Au Clair de la Lune)"
+                    className="w-full p-2.5 border border-slate-300 rounded font-sans text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white text-slate-900"
+                  />
+                </div>
+
+                {/* Lyrics Area */}
+                <div>
+                  <label className="block text-xs font-mono font-semibold text-slate-705 mb-1">Paroles Originales (à adapter)</label>
+                  <textarea
+                    rows={5}
+                    value={sourceText}
+                    onChange={(e) => setSourceText(e.target.value)}
+                    placeholder="Saisissez ou collez les paroles originales de votre chanson..."
+                    className="w-full p-2.5 border border-slate-300 rounded font-mono text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none bg-white text-slate-900 leading-normal"
+                  />
+                </div>
+
+                {/* Grid for Language Selectors and Styles */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-1">
+                  {/* Source Lang dropdown with auto-detect */}
+                  <div>
+                    <label className="block text-xs font-mono font-semibold text-slate-705 mb-1">Langue Source</label>
+                    <select
+                      value={sourceLang}
+                      onChange={(e) => setSourceLang(e.target.value)}
+                      className="w-full p-2 border border-slate-300 bg-white text-slate-800 rounded font-sans text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    >
+                      <option value="auto">🔍 Auto-Détection AI</option>
+                      {COMMON_LANGUAGES.map(lang => (
+                        <option key={lang.code} value={lang.code}>{lang.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Target Lang dropdown */}
+                  <div>
+                    <label className="block text-xs font-mono font-semibold text-slate-705 mb-1">Langue Cible (Traduction)</label>
+                    <select
+                      value={targetLang}
+                      onChange={(e) => setTargetLang(e.target.value)}
+                      className="w-full p-2 border border-slate-300 bg-white text-slate-800 rounded font-sans text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    >
+                      {COMMON_LANGUAGES.map(lang => (
+                        <option key={lang.code} value={lang.code}>{lang.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Style of Translation */}
+                  <div>
+                    <label className="block text-xs font-mono font-semibold text-slate-705 mb-1">Style de l'Adaptation</label>
+                    <select
+                      value={selectedStyle}
+                      onChange={(e) => setSelectedStyle(e.target.value)}
+                      className="w-full p-2 border border-slate-300 bg-white text-slate-800 rounded font-sans text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    >
+                      <option value="poetic">Poésie Classique & Lyrique</option>
+                      <option value="soft">Berceuse Douce & Calme</option>
+                      <option value="upbeat">Moderne & Énergique (Tempo soutenu)</option>
+                      <option value="silly">Amusant & Rigolo (Pour rire)</option>
+                    </select>
+                  </div>
+
+                  {/* Submit button */}
+                  <div className="flex items-end">
+                    <button
+                      onClick={() => handleTriggerInstantTranslate()}
+                      disabled={translatorLoading}
+                      className="w-full py-2 bg-blue-650 hover:bg-blue-700 text-white font-mono text-[10.5px] font-bold uppercase tracking-wider rounded-lg border border-blue-700 transition cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      {translatorLoading ? (
+                        <>
+                          <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          <span>Calcul en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Languages className="w-3.5 h-3.5" />
+                          <span>Adapter le Chant</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Error Indicator */}
+            {translatorError && (
+              <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-red-800 font-mono text-xs flex items-start gap-2.5 animate-fade-in shadow-2xs">
+                <AlertCircle className="w-4.5 h-4.5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Erreur de l'adaptation :</span> {translatorError}
+                </div>
+              </div>
+            )}
+
+            {/* Result Displays */}
+            {translatorLoading && (
+              <div className="bg-white border border-slate-200 rounded-xl p-10 text-center space-y-3 shadow-xs">
+                <div className="w-10 h-10 border-4 border-blue-105 border-t-blue-600 rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-mono text-slate-550 animate-pulse">
+                  Le moteur d'adaptation structure les vers chantables...
+                </p>
+              </div>
+            )}
+
+            {translatorResult && !translatorLoading && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Side-by-side Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Original Card */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                    <div>
+                      <div className="border-b border-slate-100 pb-2 mb-3 flex justify-between items-center bg-slate-50 p-2.5 rounded">
+                        <span className="text-[10px] font-mono uppercase bg-slate-200 text-slate-700 px-2 py-0.5 rounded font-bold">
+                          ORIGINAL Chant d'Origine
+                        </span>
+                      </div>
+                      <h4 className="text-base font-sans font-bold text-slate-800">{sourceTitle || "Paroles brutes"}</h4>
+                      <pre className="font-sans text-stone-700 text-xs mt-3 whitespace-pre-line leading-relaxed italic border-l-2 border-slate-200 pl-3">
+                        {sourceText}
+                      </pre>
+                    </div>
+                  </div>
+
+                  {/* Translated Card */}
+                  <div className="bg-indigo-950 border border-indigo-900 rounded-xl p-5 shadow-sm text-indigo-100 flex flex-col justify-between">
+                    <div>
+                      <div className="border-b border-indigo-900/40 pb-2 mb-3 flex justify-between items-center bg-indigo-900/30 p-2.5 rounded">
+                        <span className="text-[10px] font-mono uppercase bg-indigo-900/60 text-indigo-200 px-2 py-0.5 rounded font-bold tracking-wide">
+                          ADAPTATION Gatlinkeys Libre ({COMMON_LANGUAGES.find(l => l.code === targetLang)?.name || targetLang})
+                        </span>
+                        
+                        {/* TTS Audio play */}
+                        <button
+                          onClick={() => handleToggleSpeech(translatorResult.lyrics_translated, targetLang)}
+                          className={`p-1.5 rounded-full bg-indigo-900 border border-indigo-800 text-indigo-300 hover:text-white transition cursor-pointer flex items-center justify-center gap-1 shadow-3xs ${
+                            isSpeaking ? "animate-pulse border-indigo-505 text-white" : ""
+                          }`}
+                          title="Lancer la synthèse vocale pour les enfants !"
+                        >
+                          <Volume2 className="w-4 h-4" />
+                          <span className="text-[9px] font-mono px-1">{isSpeaking ? "CHUTE..." : "ÉCOUTER"}</span>
+                        </button>
+                      </div>
+
+                      {/* Manual Editable Lyrics Area */}
+                      <div className="space-y-2">
+                        <div>
+                          <label className="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold block mb-1">
+                            Titre Adapté :
+                          </label>
+                          <input
+                            type="text"
+                            value={translatorResult.title_translated || ""}
+                            onChange={(e) => {
+                              setTranslatorResult({
+                                ...translatorResult,
+                                title_translated: e.target.value
+                              });
+                            }}
+                            className="w-full bg-indigo-900/40 text-white px-2.5 py-1.5 rounded border border-indigo-900 font-sans text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-mono uppercase tracking-wider text-indigo-400 font-bold block mb-1">
+                            Paroles Chantables (Modifiables en direct) :
+                          </label>
+                          <textarea
+                            rows={8}
+                            value={translatorResult.lyrics_translated}
+                            onChange={(e) => {
+                              setTranslatorResult({
+                                ...translatorResult,
+                                lyrics_translated: e.target.value
+                              });
+                            }}
+                            className="w-full h-auto bg-indigo-900/40 text-indigo-100 p-2.5 rounded border border-indigo-900 font-sans text-xs whitespace-pre-line leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+                            placeholder="Ajustez les paroles ici..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subsidary Insights */}
+                <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl space-y-4">
+                  <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">
+                    Spécifications Rythmiques & Poétiques Assistées
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Cadence alignment */}
+                    <div className="space-y-1 bg-white p-3 rounded border border-slate-150">
+                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold uppercase">Cadence & Rythme</span>
+                      <p className="text-xs font-bold text-slate-800 mt-1">Directives d'Alignement Moteur :</p>
+                      <p className="text-xs text-slate-600 font-sans italic leading-relaxed pt-1 whitespace-pre-line">
+                        {translatorResult.singing_guide || "Respecte rigoureusement la prosodie d'origine."}
+                      </p>
+                    </div>
+
+                    {/* Adaptation Choices notes */}
+                    <div className="space-y-1 bg-white p-3 rounded border border-slate-150">
+                      <span className="text-[10px] font-mono text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-bold uppercase">Choix Traductologiques</span>
+                      <p className="text-xs font-bold text-slate-800 mt-1">Ajustements Phonologiques :</p>
+                      <p className="text-xs text-slate-600 font-sans italic leading-relaxed pt-1 whitespace-pre-line">
+                        {translatorResult.notes_adaptation || "Création de rimes de même métrique."}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Style variation selector */}
+                  <div className="pt-2 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-3">
+                    <span className="text-[11px] font-mono text-slate-500">
+                      Pas totalement satisfait ? Changez de style pour recalculer une rythmique alternative :
+                    </span>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedStyle}
+                        onChange={(e) => {
+                          setSelectedStyle(e.target.value);
+                        }}
+                        className="p-1.5 border border-slate-300 bg-white text-slate-850 rounded font-sans text-[11px] focus:outline-none"
+                      >
+                        <option value="poetic">Poésie Classique</option>
+                        <option value="soft">Berceuse Douce</option>
+                        <option value="upbeat">Moderne & Énergique</option>
+                        <option value="silly">Silly & Rigolo</option>
+                      </select>
+                      <button
+                        onClick={() => handleTriggerInstantTranslate()}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-black text-white font-mono text-[10px] font-bold uppercase tracking-wider rounded transition shadow-3xs cursor-pointer flex items-center gap-1.5"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Régénérer</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* SUBTAB 1: REPOSITORY EXPLORER */}
         {activeSubTab === "repository" && (
