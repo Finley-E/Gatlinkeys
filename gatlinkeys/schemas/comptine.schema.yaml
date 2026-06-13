@@ -1,0 +1,44 @@
+version: 1.0
+
+id:
+title:
+language:
+country:
+
+source:
+author:
+collection_date:
+
+age_range:
+  min:
+  max:
+
+themes:
+
+skills:
+
+heritage:
+
+music:
+  tempo:
+  meter:
+  mood:
+
+linguistics:
+  syllables:
+  rhyme_scheme:
+
+lyrics_original:
+
+variants:
+  cognitive:
+  creativity:
+  mathematics:
+  science:
+  leadership:
+  entrepreneurship:
+  health:
+  financial_literacy:
+  ai_literacy:
+
+status:

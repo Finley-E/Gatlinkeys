@@ -48,6 +48,8 @@ export interface AIVariants {
   health?: string;
   emotional_intelligence?: string;
   environmental_awareness?: string;
+  financial_literacy?: string;
+  ai_literacy?: string;
 }
 
 export interface NurseryRhyme {

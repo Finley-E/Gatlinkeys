@@ -1,0 +1,21 @@
+id: FR0001
+
+title: Ainsi font font font
+
+language: fr
+
+country: France
+
+age_range:
+  min: 2
+  max: 7
+
+themes:
+  - movement
+  - imitation
+
+skills:
+  - rhythm
+  - memory
+
+status: collected

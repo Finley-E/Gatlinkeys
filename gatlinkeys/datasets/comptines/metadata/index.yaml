@@ -1,0 +1,15 @@
+corpus:
+  name: Gatlinkeys Nursery Rhyme Corpus
+
+targets:
+  originals: 1001
+
+languages:
+  - fr
+  - mfe
+  - en
+
+status:
+  collected: 8
+  annotated: 8
+  remastered: 8

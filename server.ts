@@ -71,6 +71,57 @@ app.post("/api/rhymes/reset", (req, res) => {
   res.json({ success: true, count: rhymesCollection.length, message: "Corpus reset to default 8 specimen records." });
 });
 
+// Translation & Adaptation On-The-Fly Endpoint
+app.post("/api/pipeline/translate", async (req, res) => {
+  const { title, lyricsOriginal, sourceLanguage, targetLanguage } = req.body;
+
+  if (!lyricsOriginal || !targetLanguage) {
+    return res.status(400).json({ success: false, error: "Les paroles originales et la langue cible sont requises." });
+  }
+
+  try {
+    const ai = getGeminiClient();
+    const prompt = `Vous êtes un ethnomusicologue d'avant-garde et traducteur littéraire expert de la petite enfance (Gatlinkeys Translator).
+Votre but est de traduire et d'ADAPTER de manière rythmée et chantable la comptine ci-dessous dans la langue cible : "${targetLanguage}".
+
+Informations de base :
+Titre original : "${title || 'Inconnu'}"
+Langue d'origine : "${sourceLanguage || 'Inconnue'}"
+Paroles originales :
+"${lyricsOriginal}"
+
+Critères cruciaux d'adaptation :
+1. Conservatisme métrique & chantable : Les paroles de la langue cible doivent être faciles à chanter sur la même mélodie ou cadence rythmique que l'original.
+2. Clarté phonologique & allitérations : Adaptez les sons pour qu'ils soient amusants, faciles à répéter et adaptés aux bébés ou jeunes enfants de la langue cible.
+3. Transposition culturelle : Si certains termes ou concepts sont trop régionaux, transposez-les de manière équivalente et familière pour les enfants réceptifs à la langue cible.
+
+Générez la réponse au format JSON strictly compatible avec ce schéma :
+{
+  "title_translated": "Titre traduit et adapté avec soin",
+  "lyrics_translated": "Les paroles adaptées dans la langue cible (en plusieurs vers avec retours à la ligne \\n)",
+  "notes_adaptation": "Détails explicatifs de 2-3 phrases sur vos choix d'adaptation phonétique ou culturelle spécifiques",
+  "singing_guide": "Guide ludique de 1-2 phrases pour expliquer aux professeurs comment diriger le chant dans cette nouvelle langue (e.g. tempo, claquement de mains ou prononciation des allitérations)"
+}
+
+Retournez UNIQUEMENT du JSON pur, directement parsable, sans balise markdown de bloc de code.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    res.json({ success: true, result: parsed });
+
+  } catch (error: any) {
+    console.error("Translation pipeline error:", error);
+    res.status(500).json({ success: false, error: error.message || "Erreur lors de l'adaptation multilingue." });
+  }
+});
+
 // Master Prompt Pipelines run endpoint
 app.post("/api/pipeline/run", async (req, res) => {
   const { stage, lyricsOriginal, currentData, titleInput, langInput } = req.body;
