@@ -1,0 +1,38 @@
+version: 1.0
+id: "MFE0001"
+title: "Zako a mase"
+language: "mfe"
+country: "Maurice"
+source: "Traditional Mauritian oral folklore"
+author: "Traditionnel"
+collection_date: "19th Century"
+age_range:
+  min: 2
+  max: 6
+themes: ["animals", "nature", "humor"]
+skills: ["rhythm", "language", "social_interaction", "observation"]
+heritage:
+  historical_period: "19th Century"
+  region: "Pamplemousses"
+  oral_tradition: true
+  references: "Kiltir ek Tradision Oral Morisien"
+  preservation_status: "Active"
+music:
+  tempo: 120
+  meter: "6/8"
+  mood: "Energetic"
+  cadence: "Ternary Sega syncopation"
+  call_response: true
+linguistics:
+  syllables: 6
+  rhyme_scheme: "A-B-C-B"
+  vocabulary_level: "Beginner"
+lyrics_original: "Zako a masé,\nZako a bwaré,\nDan karo bannan..."
+variants:
+  cognitive: "Replace 'zako' with animals to test classification."
+  leadership: "One child dances as 'Chief Monkey' leading others."
+  entrepreneurship: "Plan a mock banana harvest market."
+  health: "Balance a cardboard banana on head."
+  financial: "Barter system: how many bananas equal one coffee mug?"
+  ai_literacy: "Sequence card instruction algorithm for monkeys."
+status: "annotated"

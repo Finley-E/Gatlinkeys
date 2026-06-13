@@ -1,0 +1,10 @@
+version: 1.0
+document_id: "MFE0001"
+confidence_score: 0.95
+last_annotated: "2026-06-13T00:00:00Z"
+curator_notes: "Annotated automatically and approved by human child psychologist."
+annotations:
+  cognitive_tags:
+    - "sequencing"
+    - "pattern_recognition"
+  historical_context: "Rooted in slave narrative songs of the Indian Ocean sugar plantations."

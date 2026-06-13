@@ -1,0 +1,30 @@
+id: "MFE0001"
+title: "Zako a mase"
+language: "mfe"
+country: "Maurice"
+source: "Kiltir ek Tradision Oral Morisien"
+author: "Traditionnel"
+collection_date: "19th Century"
+age_range:
+  min: 2
+  max: 6
+themes:
+  - "animals"
+  - "nature"
+  - "humor"
+skills:
+  - "rhythm"
+  - "language"
+  - "social_interaction"
+  - "observation"
+lyrics_original: |
+  Zako a masé,
+  Zako a bwaré,
+  Dan karo bannan,
+  Bann zako dans Sega,
+  Bwi, bwi, bwi so taba.
+
+  Trap so lake tonton,
+  Trap so lake!
+  Sinon li pou arete,
+  Li pou bwar to kafe!

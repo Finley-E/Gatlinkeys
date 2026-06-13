@@ -1,0 +1,17 @@
+name: "Cognitive Remaster Profiler"
+target_skills:
+  - "working_memory"
+  - "sequencing"
+  - "pattern_recognition"
+vocabulary_constraints:
+  - "high_repetition"
+  - "simple_cadences"
+age_range:
+  min: 2
+  max: 6
+educational_objectives:
+  - "Accelerate memory pathways via interactive incremental games."
+  - "Encourage children to substitute lyrics to practice category sorting."
+output_rules:
+  - "Keep identical syllable length per melodic line"
+  - "Focus on naming actions and sequential intervals"

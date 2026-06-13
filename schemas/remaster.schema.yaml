@@ -1,0 +1,9 @@
+version: 1.0
+profile: "cognitive | leadership | entrepreneurship | health | financial | ai_literacy"
+educational_objectives:
+  - "Targeted skills reinforced by the adaptive version"
+output_rules:
+  - "Maintain original singability rhythm and syllable cadences"
+  - "Integrate specific domain terminology in a child-accessible manner"
+vocabulary_constraints:
+  - "Simple, phonetically repeating alliterative words"

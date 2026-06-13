@@ -476,6 +476,7 @@ export default function App() {
                 <GatlinkeysExplorer 
                   onNavigateToPipeline={() => setActiveTab("prompts")} 
                   installedCount={rhymes.length} 
+                  rhymes={rhymes}
                 />
               )}
             </div>

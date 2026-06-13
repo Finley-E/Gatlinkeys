@@ -1,0 +1,29 @@
+id: "FR0001"
+title: "Ainsi font font font"
+language: "fr"
+country: "France"
+source: "Héritage Oral de France"
+author: "Traditionnel"
+collection_date: "18th Century"
+age_range:
+  min: 1
+  max: 5
+themes:
+  - "movement"
+  - "puppets"
+  - "observation"
+skills:
+  - "memory"
+  - "coordination"
+  - "rhythm"
+  - "fine_motor"
+lyrics_original: |
+  Ainsi font, font, font
+  Les petites marionnettes,
+  Ainsi font, font, font
+  Trois petits tours et puis s'en vont.
+
+  Elles reviendront, dront, dront
+  Les petites marionnettes,
+  Elles reviendront, dront, dront
+  Quand les enfants dormiront.

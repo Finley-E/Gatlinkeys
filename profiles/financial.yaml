@@ -1,0 +1,17 @@
+name: "Financial Literacy Remaster"
+target_skills:
+  - "value_exchange"
+  - "delayed_gratification"
+  - "token_systems"
+vocabulary_constraints:
+  - "simple_trade_nouns"
+  - "counting_verbs"
+age_range:
+  min: 4
+  max: 8
+educational_objectives:
+  - "Introduce the basic concept of bartering, sharing, and tokens/currency."
+  - "Illustrate the relationship between patience, effort, and accumulation."
+output_rules:
+  - "Integrate physical counters (pebbles, nuts, or bananas) into song movements"
+  - "The song lyrics should explore counting and trading resources"

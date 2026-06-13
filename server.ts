@@ -122,6 +122,83 @@ Retournez UNIQUEMENT du JSON pur, directement parsable, sans balise markdown de 
   }
 });
 
+// Translation & Remaster Adaptive Formula Endpoint (Phase 3 & 7)
+app.post("/api/pipeline/translate-remaster", async (req, res) => {
+  const { rhyme, remasterKey, targetLanguageKey } = req.body;
+
+  if (!rhyme || !remasterKey || !targetLanguageKey) {
+    return res.status(400).json({ success: false, error: "Missing required parameters (rhyme, remasterKey, targetLanguageKey)." });
+  }
+
+  try {
+    const ai = getGeminiClient();
+
+    // Inline profiles database to secure bundle resilience and guarantee standalone cold starts
+    const langLabels: Record<string, string> = {
+      en: "English (Anglais)",
+      fr: "Français (French)",
+      es: "Espagnol (Español)",
+      hi: "Hindi (हिन्दी)",
+      zh: "Chinese (中文)",
+      mfe: "Moorisien (Créole)"
+    };
+
+    const targetLabel = langLabels[targetLanguageKey] || targetLanguageKey;
+
+    const prompt = `Vous êtes un ethnomusicologue d'avant-garde, chercheur de l'héritage oral (Gatlinkeys Master) et linguiste cognitif.
+Votre mission est de projeter une œuvre d'origine en une version adaptée/remasterisée et chantable dans la langue cible en suivant scrupuleusement la formule d'adaptation Gatlinkeys.
+
+====================================================
+FORMULE GATLINKEYS D'ADAPTATION :
+Output = Oeuvre Canonique + Profil de Remasterisation Éducatif + Profil de Langue Cible
+====================================================
+
+ŒUVRE CANONIQUE SOURCE :
+ID : ${rhyme.id || "MFE0001"}
+Titre d'Origine : "${rhyme.title}"
+Langue d'Origine : "${rhyme.language || "Inconnue"}"
+Paroles d'Origine :
+"${rhyme.lyrics_original}"
+
+PROFIL ÉDUCATIF DE REMASTERISATION SELECTIONNÉ : [${remasterKey.toUpperCase()}]
+- Discipline d'éveil visée : ${remasterKey} (e.g. Cognitive elements, leadership, science triggers, financial barters, or AI logical conditional branches).
+- Objectifs Pédagogiques : Ajustez l'histoire, les actions d'accompagnement ou les métaphores pour intégrer de façon organique des notions de cette discipline.
+- Contraintes de chant : Les paroles dans la langue d'origine doivent être adaptées pour correspondre à cette thématique d'éveil d'enfant.
+
+PROFIL DE LANGUE CIBLE SELECTIONNÉ : [${targetLabel}]
+- Langue Cible : ${targetLanguageKey}
+- Chantabilité absolue : Les vers de la langue cible doivent respecter scrupuleusement la métrique, le tempo, la cadence et les scansions rythmiques d'origine. Ils doivent pouvoir être chantés verbatim sur la même mélodie ou structure rythmique d'origine.
+- Clarté phonologique : Utilisez des rimes, assonances, et allitérations musicales fluides adaptées aux de jeunes enfants (âges 2-8 ans).
+
+GÉNÉREZ LA RÉPONSE AU FORMAT JSON STRICTEMENT COMPATIBLE AVEC CE SCHÉMA :
+{
+  "title_translated": "Titre adapté",
+  "lyrics_translated": "Les paroles formées adaptées dans la langue cible (avec retours à la ligne \\n)",
+  "notes_adaptation": "Choix minutieux sur la métrique, les allitérations, rimes et transpositions culturelles",
+  "singing_guide": "Guide ludique pour guider les professeurs et élèves dans le chant syncopé et la cadence motrice",
+  "education_focus": "Comment l'objectif de la discipline '${remasterKey}' s'est glissé dans la mélodie"
+}
+
+Retournez UNIQUEMENT du JSON brut, sans balises markdown de code block, pour qu'il soit directement parsable.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const text = response.text || "{}";
+    const parsed = JSON.parse(text);
+    res.json({ success: true, result: parsed });
+
+  } catch (error: any) {
+    console.error("Gatlinkeys Master Transformation Engine error:", error);
+    res.status(500).json({ success: false, error: error.message || "Erreur durant le calcul de l'adaptation." });
+  }
+});
+
 // Master Prompt Pipelines run endpoint
 app.post("/api/pipeline/run", async (req, res) => {
   const { stage, lyricsOriginal, currentData, titleInput, langInput } = req.body;

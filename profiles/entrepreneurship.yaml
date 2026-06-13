@@ -1,0 +1,17 @@
+name: "Early Entrepreneurship Remaster"
+target_skills:
+  - "problem_solving"
+  - "resourcefulness"
+  - "shared_creation"
+vocabulary_constraints:
+  - "building_action_verbs"
+  - "market_coordination"
+age_range:
+  min: 4
+  max: 8
+educational_objectives:
+  - "Encourage creative problem solving: how to make a stage from scrap cardboard."
+  - "Foster the identity of a young maker who assembles resources to serve others."
+output_rules:
+  - "Focus on project staging: planning, building, and presenting"
+  - "Ensure the song features cooperative assembly steps"

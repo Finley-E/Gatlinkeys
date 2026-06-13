@@ -1,0 +1,17 @@
+name: "AI Literacy & Algorithmics Remaster"
+target_skills:
+  - "conditional_logic"
+  - "sequential_instructions"
+  - "looping_patterns"
+vocabulary_constraints:
+  - "clear_prepositions"
+  - "cause_effect_links"
+age_range:
+  min: 3
+  max: 8
+educational_objectives:
+  - "Introduce basic logic gates ('if this occurs, execute that motion')."
+  - "Reinforce recursive/looping structures through repetitive song parts."
+output_rules:
+  - "Establish a rhythmic repeating core with trigger conditions"
+  - "Integrate physical 'if-then' physical actions in the instructions"

@@ -1,0 +1,17 @@
+name: "Leadership Remaster Profiler"
+target_skills:
+  - "cooperation"
+  - "role_taking"
+  - "emotional_regulation"
+vocabulary_constraints:
+  - "supportive_words"
+  - "teamwork_analogies"
+age_range:
+  min: 3
+  max: 8
+educational_objectives:
+  - "Establish a game mechanism where children take turns directing hand-motions."
+  - "Teach auditory cues that require coordinating team response styles."
+output_rules:
+  - "Ensure song lyrics mention division of tasks or mutual guidance"
+  - "Structure verses around a call-and-response model"

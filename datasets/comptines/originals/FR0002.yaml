@@ -1,0 +1,23 @@
+id: "FR0002"
+title: "Frère Jacques"
+language: "fr"
+country: "France"
+source: "Traditional French nursery rhyme"
+author: "Jean-Philippe Rameau (attributed)"
+collection_date: "1780"
+age_range:
+  min: 2
+  max: 6
+themes:
+  - "daily_routine"
+  - "bells"
+  - "morning"
+skills:
+  - "rhythm"
+  - "canon_singing"
+  - "coordination"
+lyrics_original: |
+  Frère Jacques, Frère Jacques,
+  Dormez-vous ? Dormez-vous ?
+  Sonnez les matines ! Sonnez les matines !
+  Din, dan, don ! Din, dan, don !

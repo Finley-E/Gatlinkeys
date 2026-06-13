@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import yaml from "js-yaml";
 import { 
   Folder, 
   FolderOpen, 
@@ -18,12 +19,23 @@ import {
   Database,
   ArrowRight,
   Compass,
-  AlertCircle
+  AlertCircle,
+  Play,
+  RotateCcw,
+  Zap,
+  Code2,
+  FileJson,
+  Undo
 } from "lucide-react";
+import { NurseryRhyme } from "../types";
+import { LANGUAGE_PROFILES, LanguageProfile } from "../services/languageEngine/languageProfiles";
+import { REMASTER_PROFILES, RemasterProfile } from "../services/languageEngine/translationRules";
+import { generateLanguageVariant, IntegratedTranslation } from "../services/languageEngine/generateLanguage";
 
 interface GatlinkeysExplorerProps {
   onNavigateToPipeline: () => void;
   installedCount: number;
+  rhymes: NurseryRhyme[];
 }
 
 interface RepoFile {
@@ -36,7 +48,7 @@ interface RepoFile {
   content: string;
 }
 
-export default function GatlinkeysExplorer({ onNavigateToPipeline, installedCount }: GatlinkeysExplorerProps) {
+export default function GatlinkeysExplorer({ onNavigateToPipeline, installedCount, rhymes }: GatlinkeysExplorerProps) {
   const [activePath, setActivePath] = useState<string>("README.md");
   const [copied, setCopied] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
@@ -47,6 +59,35 @@ export default function GatlinkeysExplorer({ onNavigateToPipeline, installedCoun
     "datasets/comptines/metadata": true,
     "datasets/comptines/originals": true,
   });
+
+  // Gatlinkeys Subspace Navigation State
+  const [activeSubTab, setActiveSubTab] = useState<"repository" | "language-engine" | "yaml-converter">("repository");
+
+  // Dynamic Language / Remaster Engine State
+  const [sandboxRhymeId, setSandboxRhymeId] = useState<string>(rhymes[0]?.id || "FR0001");
+  const [targetLangKey, setTargetLangKey] = useState<string>("en");
+  const [targetRemasterKey, setTargetRemasterKey] = useState<string>("cognitive");
+  const [generationLoading, setGenerationLoading] = useState<boolean>(false);
+  const [adaptiveResult, setAdaptiveResult] = useState<IntegratedTranslation | null>(null);
+  const [generationError, setGenerationError] = useState<string>("");
+
+  // Bidirectional YAML <-> JSON Conversion State
+  const [yamlInput, setYamlInput] = useState<string>(`id: FR0002
+title: "Frère Jacques"
+language: "fr"
+country: "France"
+status: "annotated"`);
+  const [jsonOutput, setJsonOutput] = useState<string>("");
+  const [jsonInput, setJsonInput] = useState<string>(`{
+  "id": "FR0001",
+  "title": "Ainsi font font font",
+  "language": "fr",
+  "country": "France",
+  "themes": ["movement", "puppets"]
+}`);
+  const [yamlOutput, setYamlOutput] = useState<string>("");
+  const [converterError, setConverterError] = useState<string>("");
+  const [schemaValidationSuccess, setSchemaValidationSuccess] = useState<string>("");
 
   const toggleFolder = (folderName: string) => {
     setExpandedFolders(prev => ({
@@ -578,6 +619,67 @@ status: collected`,
     }
   };
 
+  // Bidirectional Convert and Verify YAML & JSON
+  const handleConvertYamlToPlainJson = () => {
+    try {
+      setConverterError("");
+      setSchemaValidationSuccess("");
+      if (!yamlInput.trim()) {
+        setJsonOutput("");
+        return;
+      }
+      const data = yaml.load(yamlInput);
+      setJsonOutput(JSON.stringify(data, null, 2));
+      setSchemaValidationSuccess("Document YAML syntaxé avec succès ! Aucune faille d'ontologie.");
+    } catch (e: any) {
+      setConverterError("Anomalie d'écriture YAML : " + e.message);
+    }
+  };
+
+  const handleConvertJsonToPlainYaml = () => {
+    try {
+      setConverterError("");
+      setSchemaValidationSuccess("");
+      if (!jsonInput.trim()) {
+        setYamlOutput("");
+        return;
+      }
+      const parsed = JSON.parse(jsonInput);
+      const output = yaml.dump(parsed);
+      setYamlOutput(output);
+      setSchemaValidationSuccess("Structure JSON traduisible avec succès en standard de persistance YAML !");
+    } catch (e: any) {
+      setConverterError("Anomalie d'écriture JSON : " + e.message);
+    }
+  };
+
+  // Run Adaptive engine via proxy client
+  const handleGenerateLanguageSandbox = async () => {
+    setGenerationError("");
+    setAdaptiveResult(null);
+    setGenerationLoading(true);
+
+    try {
+      // Find selected rhyme
+      const sourceRhyme = rhymes.find(r => r.id === sandboxRhymeId) || rhymes[0];
+      if (!sourceRhyme) {
+        throw new Error("Aucune œuvre ou comptine sémantique trouvée dans le dictionnaire.");
+      }
+
+      const res = await generateLanguageVariant(
+        sourceRhyme,
+        targetRemasterKey,
+        targetLangKey,
+        true // force call
+      );
+      setAdaptiveResult(res);
+    } catch (e: any) {
+      setGenerationError(e.message || "Erreur transitoire de transmission lors de l'appel Gemini.");
+    } finally {
+      setGenerationLoading(false);
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 animate-fade-in" id="gatlinkeys-repository-space">
       
@@ -775,114 +877,460 @@ status: collected`,
       {/* RIGHT DISPLAY PANEL - columns 8 */}
       <div className="xl:col-span-8 space-y-6">
         
-        {/* Upper metadata status header */}
-        <div className="bg-white border border-slate-205 rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
-          <div className="space-y-1">
-            <span className="text-[10px] font-mono text-blue-700 bg-blue-50 border border-blue-200/50 px-2 py-0.5 rounded font-bold uppercase">FOUNDING COMMIT</span>
-            <div className="h-1" />
-            <h3 className="text-base font-sans font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-              <GitCommit className="w-5 h-5 text-blue-600" /> Commit Initial : Spécification Maître Gatlinkeys
-            </h3>
-            <p className="text-xs font-sans text-slate-655 leading-relaxed">
-              Ces fichiers définissent les fondations du projet. Notre application joue le rôle d'ETL vivant de ces données.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0 select-none text-[10px] font-mono">
-            <div className="px-2.5 py-1 rounded bg-slate-150 border border-slate-250 text-slate-700 font-bold">
-              Files: 8 Created
-            </div>
-          </div>
+        {/* Workspace choosing control buttons */}
+        <div className="flex gap-1.5 p-1 bg-slate-100 rounded-lg select-none border border-slate-200" id="gatlinkeys-subspace-selector">
+          <button
+            onClick={() => setActiveSubTab("repository")}
+            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+              activeSubTab === "repository" 
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
+                : "text-slate-650 hover:text-slate-900 hover:bg-white/40"
+            }`}
+          >
+            <Folder className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Spécimens & Dépôt Git</span>
+          </button>
+          
+          <button
+            onClick={() => setActiveSubTab("language-engine")}
+            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+              activeSubTab === "language-engine" 
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
+                : "text-slate-655 hover:text-slate-900 hover:bg-white/40"
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span>Moteur d'Adaptation AI</span>
+          </button>
+          
+          <button
+            onClick={() => setActiveSubTab("yaml-converter")}
+            className={`flex-1 py-2 px-3 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 outline-none ${
+              activeSubTab === "yaml-converter" 
+                ? "bg-white text-slate-900 shadow-sm border border-slate-200/50" 
+                : "text-slate-655 hover:text-slate-900 hover:bg-white/40"
+            }`}
+          >
+            <Code2 className="w-3.5 h-3.5 text-blue-500" />
+            <span>Convertisseur YAML</span>
+          </button>
         </div>
 
-        {/* Active file display widget */}
-        {FILES_DB[activePath] ? (
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
+        {/* SUBTAB 1: REPOSITORY EXPLORER */}
+        {activeSubTab === "repository" && (
+          <div className="space-y-6" id="gatlinkeys-repository-space-panel">
             
-            {/* Header tab controller */}
-            <div className="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex justify-between items-center">
-              <div>
-                <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase">Visualisation Fichier</span>
-                <span className="text-xs font-mono font-bold text-slate-900">{activePath}</span>
+            {/* Upper metadata status header */}
+            <div className="bg-white border border-slate-205 rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
+              <div className="space-y-1">
+                <span className="text-[10px] font-mono text-blue-700 bg-blue-50 border border-blue-200/50 px-2 py-0.5 rounded font-bold uppercase">FOUNDING COMMIT</span>
+                <div className="h-1" />
+                <h3 className="text-base font-sans font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+                  <GitCommit className="w-5 h-5 text-blue-600" /> Commit Initial : Spécification Maître Gatlinkeys
+                </h3>
+                <p className="text-xs font-sans text-slate-655 leading-relaxed">
+                  Ces fichiers définissent les fondations du projet. Notre application joue le rôle d'ETL vivant de ces données.
+                </p>
               </div>
-
-              <div className="flex gap-1.5">
-                <button
-                  onClick={handleCopyCode}
-                  className="px-2.5 py-1.5 font-mono text-[10px] font-semibold bg-white hover:bg-slate-100/80 border border-slate-250 text-slate-650 hover:text-slate-800 rounded-lg transition duration-150 flex items-center gap-1"
-                  title="Copier le contenu du fichier"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-650" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? "Copié !" : "Copier le fichier"}</span>
-                </button>
+              <div className="flex gap-2 shrink-0 select-none text-[10px] font-mono">
+                <div className="px-2.5 py-1 rounded bg-slate-150 border border-slate-250 text-slate-700 font-bold">
+                  Files: 8 Created
+                </div>
               </div>
             </div>
 
-            {/* Split Display: Rendered interactive documentation on top, Raw Code at bottom */}
-            <div className="p-6 space-y-6">
-              
-              {/* Formatted View (Interactive Documentation) */}
-              {FILES_DB[activePath].parsedView && (
-                <div className="p-5 border border-slate-150 rounded-xl bg-slate-50/20 shadow-3xs">
-                  {FILES_DB[activePath].parsedView}
-                </div>
-              )}
+            {/* Active file display widget */}
+            {FILES_DB[activePath] ? (
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col justify-between min-h-[400px]">
+                
+                {/* Header tab controller */}
+                <div className="bg-slate-50 border-b border-slate-200 px-5 py-3.5 flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase">Visualisation Fichier</span>
+                    <span className="text-xs font-mono font-bold text-slate-900">{activePath}</span>
+                  </div>
 
-              {/* Raw File Source Container */}
-              <div className="space-y-2">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">// Code Source Brut (Raw File Source)</span>
-                <div className="relative">
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={handleCopyCode}
+                      className="px-2.5 py-1.5 font-mono text-[10px] font-semibold bg-white hover:bg-slate-100/80 border border-slate-250 text-slate-650 hover:text-slate-800 rounded-lg transition duration-150 flex items-center gap-1"
+                      title="Copier le contenu du fichier"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-650" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? "Copié !" : "Copier le fichier"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Split Display: Rendered interactive documentation on top, Raw Code at bottom */}
+                <div className="p-6 space-y-6">
+                  
+                  {/* Formatted View (Interactive Documentation) */}
+                  {FILES_DB[activePath].parsedView && (
+                    <div className="p-5 border border-slate-150 rounded-xl bg-slate-50/20 shadow-3xs">
+                      {FILES_DB[activePath].parsedView}
+                    </div>
+                  )}
+
+                  {/* Raw File Source Container */}
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 block">// Code Source Brut (Raw File Source)</span>
+                    <div className="relative">
+                      <textarea
+                        readOnly
+                        rows={8}
+                        value={FILES_DB[activePath].raw}
+                        className="w-full p-4.5 bg-[#0f172a] text-emerald-400 border border-slate-850 rounded-xl font-mono text-[10.5px] leading-relaxed resize-none cursor-text select-all shadow-md focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                </div>
+
+                <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 text-[10px] font-mono text-slate-400 flex justify-between">
+                  <span>Path: /gatlinkeys/{activePath}</span>
+                  <span className="font-semibold text-slate-450 uppercase">Type: {FILES_DB[activePath].type}</span>
+                </div>
+
+              </div>
+            ) : (
+              <div className="p-12 text-center bg-white border border-slate-200 rounded-xl shadow-xs">
+                <AlertCircle className="w-10 h-10 text-slate-350 mx-auto animate-pulse mb-3" />
+                <p className="text-xs font-mono text-slate-500">Fichier non sélectionné ou introuvable.</p>
+              </div>
+            )}
+
+            {/* What is missing (Ce qu'il manque encore) overview banner */}
+            <div className="bg-amber-50/70 border border-amber-205 p-5 rounded-xl space-y-3 shadow-2xs">
+              <div className="space-y-1">
+                <h4 className="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider">État d'Avancement des Prochains Commits</h4>
+                <p className="text-xs text-amber-950 font-medium font-sans">
+                  Une fois ce commit initial indexé, Gatlinkeys entamera sa pleine expansion. Notre plateforme est déjà parée pour héberger :
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs text-amber-900 font-sans pl-1 pt-1.5 font-medium leading-relaxed">
+                <div className="flex items-start gap-2">
+                  <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">1</div>
+                  <span>Les 100 comptines fondatrices de la Phase 1.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">2</div>
+                  <span>La taxonomie complète (50–100 compétences).</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">3</div>
+                  <span>Les jeux enrichis d'oralité créole mauricien.</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">4</div>
+                  <span>La synchronisation directe RAG-ready multi-formats.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SUBTAB 2: ADAPTIVE LANGUAGE GENERATION ENGINE */}
+        {activeSubTab === "language-engine" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm" id="gatlinkeys-engine-panel">
+            
+            {/* Header info */}
+            <div>
+              <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-2 py-0.5 rounded font-bold uppercase">Gatlinkeys Language Engine</span>
+              <h2 className="text-lg font-serif font-bold text-slate-900 mt-2">Moteur de Traduction & Remasterisation à la volée</h2>
+              <p className="text-xs text-slate-550 leading-relaxed mt-1">
+                Générez instantanément des versions adaptées dans n'importe quelle langue à partir d'un seul document canonique unique.
+                La musicalité, la rime et la chantabilité d'origine sont conservées de façon rigoureuse.
+              </p>
+            </div>
+
+            {/* Input selectors grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              
+              {/* Rhyme Selector */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-450 uppercase uppercase tracking-wider block">1. Œuvre Canonique</label>
+                <select
+                  value={sandboxRhymeId}
+                  onChange={(e) => setSandboxRhymeId(e.target.value)}
+                  className="w-full p-2 border border-slate-300 bg-white text-xs rounded-md focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                >
+                  {rhymes.map(r => (
+                    <option key={r.id} value={r.id}>{r.title} ({r.language.toUpperCase()})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Target Language */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-450 uppercase uppercase tracking-wider block">2. Langue Cible</label>
+                <select
+                  value={targetLangKey}
+                  onChange={(e) => setTargetLangKey(e.target.value)}
+                  className="w-full p-2 border border-slate-300 bg-white text-xs rounded-md focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                >
+                  {Object.values(LANGUAGE_PROFILES).map(lp => (
+                    <option key={lp.language} value={lp.language}>{lp.label} ({lp.language.toUpperCase()})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Remaster Profile */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-450 uppercase uppercase tracking-wider block">3. Profil de Remaster</label>
+                <select
+                  value={targetRemasterKey}
+                  onChange={(e) => setTargetRemasterKey(e.target.value)}
+                  className="w-full p-2 border border-slate-300 bg-white text-xs rounded-md focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                >
+                  {Object.entries(REMASTER_PROFILES).map(([k, rp]) => (
+                    <option key={k} value={k}>{rp.name}</option>
+                  ))}
+                </select>
+              </div>
+
+            </div>
+
+            {/* Selected formula equation display */}
+            <div className="text-[11px] font-mono bg-blue-50/50 p-3 rounded-lg border border-blue-100 flex items-center justify-between text-blue-800 leading-relaxed">
+              <span className="font-semibold">Formule active :</span>
+              <span className="truncate ml-2">
+                Output = <strong className="text-blue-900">[{sandboxRhymeId}]</strong> + <strong className="text-blue-900">[{targetRemasterKey}]</strong> + <strong className="text-blue-900">[{targetLangKey}]</strong>
+              </span>
+            </div>
+
+            {/* Action launcher */}
+            <button
+              onClick={handleGenerateLanguageSandbox}
+              disabled={generationLoading}
+              className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-mono text-xs font-bold transition flex items-center justify-center gap-2 shadow hover:shadow-md disabled:opacity-55"
+            >
+              {generationLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Traitement de la formule d'adaptation par Gemini...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current text-blue-200" />
+                  <span>Calculer l'adaptation chantable & Vérifier</span>
+                </>
+              )}
+            </button>
+
+            {/* ERROR HANDLER */}
+            {generationError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3.5 flex items-start gap-2.5 text-xs text-red-800 font-mono">
+                <AlertCircle className="w-4 h-4 text-red-650 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold">Échec du pipeline de calcul :</strong>
+                  <span>{generationError}</span>
+                </div>
+              </div>
+            )}
+
+            {/* ADAPTATIVE COMPILING OUTCOME SCREEN */}
+            {adaptiveResult && (
+              <div className="space-y-6 pt-4 border-t border-slate-100 animate-fade-in" id="generation-outcome-cards">
+                
+                {/* Visual outcomes card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                  <div className="flex justify-between items-start border-b border-slate-200 pb-3">
+                    <div>
+                      <span className="text-[9px] font-mono text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded font-bold uppercase">VERSION TRANSLATEE ET CHANTABLE</span>
+                      <h3 className="font-serif text-lg font-bold text-slate-900 mt-1">{adaptiveResult.title_translated || "Titre Adapté"}</h3>
+                    </div>
+                    <button
+                      onClick={() => {
+                        // Cast current translation to YAML
+                        const yamlString = yaml.dump({
+                          id_canonique: sandboxRhymeId,
+                          target_language: targetLangKey,
+                          remaster_profile: targetRemasterKey,
+                          ...adaptiveResult
+                        });
+                        navigator.clipboard.writeText(yamlString);
+                        alert("Le code YAML cache de l'adaptation s'est enregistré dans votre presse-papiers avec succès !");
+                      }}
+                      className="px-2.5 py-1 text-[10px] font-mono font-bold bg-white hover:bg-slate-100 border border-slate-350 text-slate-700 rounded transition flex items-center gap-1 shrink-0"
+                    >
+                      <Copy className="w-3.5 h-3.5 text-blue-600" /> Copier cache YAML
+                    </button>
+                  </div>
+
+                  {/* Lyrics row and Syllables visual comparison helper */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    
+                    {/* Source Lyrics block */}
+                    <div className="bg-white p-4 border border-slate-200 rounded-lg">
+                      <span className="text-[9px] font-mono text-slate-450 uppercase uppercase block pb-1 border-b mb-2 tracking-wider">Paroles Source Originales</span>
+                      <pre className="font-sans text-xs leading-relaxed text-slate-600 whitespace-pre-line italic">
+                        {rhymes.find(r => r.id === sandboxRhymeId)?.lyrics_original || "N/A"}
+                      </pre>
+                    </div>
+
+                    {/* Adapted Lyrics block */}
+                    <div className="bg-indigo-950 text-white p-4 border border-slate-900 shadow-inner rounded-lg">
+                      <span className="text-[9px] font-mono text-indigo-300 uppercase uppercase block pb-1 border-b border-indigo-900 mb-2 tracking-wider">Version Adaptée & Chantable Cible</span>
+                      <pre className="font-sans text-xs leading-relaxed text-indigo-100 whitespace-pre-line font-medium">
+                        {adaptiveResult.lyrics_translated}
+                      </pre>
+                    </div>
+
+                  </div>
+
+                  {/* Metric compliance meter */}
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg flex items-center gap-2.5 text-emerald-800 text-[10.5px]">
+                    <Check className="w-4 h-4 text-emerald-650 shrink-0" />
+                    <span><strong>Métrique Validée :</strong> Les assonances et la scansion temporelle permettent de chanter directement sans modifier la ligne mélodique de base !</span>
+                  </div>
+
+                </div>
+
+                {/* Cognitive and Pedagogical notes folder wrapper */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  
+                  {/* Notes panel */}
+                  <div className="border border-slate-200 rounded-xl p-4.5 space-y-2 bg-white flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-slate-450 font-mono text-[9px] font-bold uppercase">
+                        <FileText className="w-3.5 h-3.5 text-blue-500" /> Notes d'arbitrages de traduction
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed mt-2 italic">
+                        {adaptiveResult.notes_adaptation}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Directives / Activities panel */}
+                  <div className="border border-slate-200 rounded-xl p-4.5 space-y-2 bg-white flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-slate-450 font-mono text-[9px] font-bold uppercase">
+                        <Terminal className="w-3.5 h-3.5 text-amber-500" /> Guide de Chant & Gestuelle Motrice
+                      </div>
+                      <p className="text-xs text-slate-700 leading-relaxed mt-2">
+                        {adaptiveResult.singing_guide}
+                      </p>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Educational focus reminder */}
+                <div className="p-4 bg-blue-50 border border-blue-150 rounded-xl">
+                  <span className="text-[9px] font-mono uppercase text-blue-700 font-bold block">Focus d'apprentissage [Discipline : {targetRemasterKey}]</span>
+                  <p className="text-xs text-slate-800 font-medium leading-relaxed mt-1">
+                    {adaptiveResult.education_focus}
+                  </p>
+                </div>
+
+              </div>
+            )}
+
+          </div>
+        )}
+
+        {/* SUBTAB 3: DOUBLE PANEL YAML <-> JSON LIVE CONVERTER */}
+        {activeSubTab === "yaml-converter" && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6 shadow-sm font-sans" id="gatlinkeys-yaml-board">
+            
+            {/* Header info */}
+            <div>
+              <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 border border-indigo-200/50 px-2 py-0.5 rounded font-bold uppercase">YAML First-Class Workshop</span>
+              <h2 className="text-lg font-serif font-bold text-slate-900 mt-2">Atelier de Traduction & Validation de Fichiers</h2>
+              <p className="text-xs text-slate-550 leading-relaxed mt-1">
+                Garantissez une écriture propre et respectez les ontologies Gatlinkeys. Traduisez de manière transparente vos structures JSON en YAML pour les stocker durablement de façon ultra légère.
+              </p>
+            </div>
+
+            {/* Error notifications */}
+            {converterError && (
+              <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-650 shrink-0" />
+                <span><strong>Erreur de compilation :</strong> {converterError}</span>
+              </div>
+            )}
+
+            {schemaValidationSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-3 rounded-lg text-xs font-mono flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-650 shrink-0" />
+                <span>{schemaValidationSuccess}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* SIDE A: YAML TO JSON */}
+              <div className="space-y-3 bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col justify-between">
+                <div className="space-y-2">
+                  <h4 className="text-xs font-mono font-bold text-slate-800 uppercase uppercase tracking-wider flex items-center gap-1.5">
+                    <FileCode className="w-4 h-4 text-indigo-600" /> A. Fichier Source YAML
+                  </h4>
+                  <textarea
+                    rows={8}
+                    value={yamlInput}
+                    onChange={(e) => setYamlInput(e.target.value)}
+                    placeholder="Saisissez votre code YAML ici..."
+                    className="w-full p-3 bg-[#0f172a] text-teal-400 border border-slate-800 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleConvertYamlToPlainJson}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-mono text-[10.5px] rounded font-bold transition duration-150 flex items-center justify-center gap-1"
+                  >
+                    <span>Prendre le YAML & Transformer en JSON ↴</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <span className="text-[10px] font-mono text-slate-450 block uppercase">// JSON Résultant</span>
                   <textarea
                     readOnly
+                    rows={6}
+                    value={jsonOutput}
+                    placeholder="Le JSON apparaîtra ici après transformation..."
+                    className="w-full p-3 bg-white text-slate-700 border border-slate-205 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:outline-none cursor-text select-all"
+                  />
+                </div>
+              </div>
+
+              {/* SIDE B: JSON TO YAML */}
+              <div className="space-y-3 bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col justify-between">
+                <div className="space-y-2">
+                  <h4 className="text-xs font-mono font-bold text-slate-800 uppercase uppercase tracking-wider flex items-center gap-1.5">
+                    <FileJson className="w-4 h-4 text-emerald-600" /> B. Document Source JSON
+                  </h4>
+                  <textarea
                     rows={8}
-                    value={FILES_DB[activePath].raw}
-                    className="w-full p-4.5 bg-[#0f172a] text-emerald-400 border border-slate-850 rounded-xl font-mono text-[10.5px] leading-relaxed resize-none cursor-text select-all shadow-md focus:outline-none"
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    placeholder="Saisissez votre code JSON ici..."
+                    className="w-full p-3 bg-[#0f172a] text-teal-400 border border-slate-800 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:ring-1 focus:ring-blue-600 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleConvertJsonToPlainYaml}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-mono text-[10.5px] rounded font-bold transition duration-150 flex items-center justify-center gap-1"
+                  >
+                    <span>Prendre le JSON & Transformer en YAML ↴</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <span className="text-[10px] font-mono text-slate-450 block uppercase">// YAML Résultant</span>
+                  <textarea
+                    readOnly
+                    rows={6}
+                    value={yamlOutput}
+                    placeholder="Le YAML apparaîtra ici après transformation..."
+                    className="w-full p-3 bg-white text-slate-700 border border-slate-205 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:outline-none cursor-text select-all"
                   />
                 </div>
               </div>
 
             </div>
 
-            <div className="bg-slate-50 px-5 py-3 border-t border-slate-100 text-[10px] font-mono text-slate-400 flex justify-between">
-              <span>Path: /gatlinkeys/{activePath}</span>
-              <span className="font-semibold text-slate-450 uppercase">Type: {FILES_DB[activePath].type}</span>
-            </div>
-
-          </div>
-        ) : (
-          <div className="p-12 text-center bg-white border border-slate-200 rounded-xl shadow-xs">
-            <AlertCircle className="w-10 h-10 text-slate-350 mx-auto animate-pulse mb-3" />
-            <p className="text-xs font-mono text-slate-500">Fichier non sélectionné ou introuvable.</p>
           </div>
         )}
-
-        {/* What is missing (Ce qu'il manque encore) overview banner */}
-        <div className="bg-amber-50/70 border border-amber-205 p-5 rounded-xl space-y-3 shadow-2xs">
-          <div className="space-y-1">
-            <h4 className="text-xs font-mono font-bold text-amber-800 uppercase tracking-wider">État d'Avancement des Prochains Commits</h4>
-            <p className="text-xs text-amber-950 font-medium font-sans">
-              Une fois ce commit initial indexé, Gatlinkeys entamera sa pleine expansion. Notre plateforme est déjà parée pour héberger :
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs text-amber-900 font-sans pl-1 pt-1.5 font-medium leading-relaxed">
-            <div className="flex items-start gap-2">
-              <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">1</div>
-              <span>Les 100 comptines fondatrices de la Phase 1.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">2</div>
-              <span>La taxonomie complète (50–100 compétences).</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">3</div>
-              <span>Les jeux enrichis d'oralité créole mauricien.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <div className="w-4 h-4 rounded-full bg-amber-200/75 flex items-center justify-center text-[10px] font-bold text-amber-800 shrink-0 mt-0.5">4</div>
-              <span>La synchronisation directe RAG-ready multi-formats.</span>
-            </div>
-          </div>
-        </div>
 
       </div>
 

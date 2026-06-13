@@ -1,0 +1,17 @@
+name: "Somatic Health & Mindful Breathing Remaster"
+target_skills:
+  - "breathing_regulation"
+  - "gross_motor_dynamics"
+  - "mind-body_awareness"
+vocabulary_constraints:
+  - "calm_rhythmic_words"
+  - "respiratory_onomatopoeia"
+age_range:
+  min: 1
+  max: 6
+educational_objectives:
+  - "Synchronize deep inhalation and exhalation cycles with song phrasing."
+  - "Guide safe joint warm-ups and finger dexterity exercises."
+output_rules:
+  - "Keep tempo below 100 BPM for calming somatic pacing"
+  - "Include explicit quiet pause cues representing breath-holding or slowing-down"

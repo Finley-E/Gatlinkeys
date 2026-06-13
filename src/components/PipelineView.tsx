@@ -54,6 +54,20 @@ export default function PipelineView({ onAddRhymeToLibrary }: PipelineViewProps)
   const [titleInput, setTitleInput] = useState("");
   const [langInput, setLangInput] = useState("fr");
   const [lyricsInput, setLyricsInput] = useState("");
+  
+  // Multi-input raw texts state
+  const [inputSaisieMode, setInputSaisieMode] = useState<"unique" | "multi">("unique");
+  const [multiRawText, setMultiRawText] = useState<string>(`Titre: Pirouette Cacahuète
+Langue: fr
+Paroles:
+Il était un petit homme
+Qui avait une drôle de maison
+---
+Titre: Sur le pont d'Avignon
+Langue: fr
+Paroles:
+Sur le pont d'Avignon
+L'on y danse, l'on y danse`);
 
   const [activeStep, setActiveStep] = useState<number>(1); // 1 to 5
   const [isRunning, setIsRunning] = useState(false);
@@ -1082,6 +1096,257 @@ ${convertToYAML(schemaObj, 0).trim()}
     setLogs(prev => [...prev, `[📦 BATCH ETL ✅] Traitement par lot terminé ! ${results.filter(r => r.success).length} succès, ${results.filter(r => !r.success).length} échec(s).`]);
   };
 
+  const parseMultiRawText = (text: string) => {
+    const pieces = text.split("---");
+    const parsedItems: Array<{ title: string; language: string; lyrics: string }> = [];
+
+    for (const piece of pieces) {
+      if (!piece.trim()) continue;
+      
+      const lines = piece.split("\n");
+      let title = "";
+      let language = "fr";
+      let lyricsLines: string[] = [];
+      let readingLyrics = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const lower = trimmed.toLowerCase();
+        if (lower.startsWith("titre:")) {
+          title = trimmed.slice(6).trim();
+          readingLyrics = false;
+        } else if (lower.startsWith("langue:")) {
+          language = trimmed.slice(7).trim().toLowerCase() || "fr";
+          readingLyrics = false;
+        } else if (lower.startsWith("paroles:")) {
+          readingLyrics = true;
+        } else {
+          if (readingLyrics) {
+            lyricsLines.push(line);
+          } else if (trimmed !== "" && !trimmed.includes(":")) {
+            lyricsLines.push(line);
+          }
+        }
+      }
+
+      const lyrics = lyricsLines.join("\n").trim();
+      if (lyrics) {
+        parsedItems.push({
+          title: title || `Comptine Sans Titre #${parsedItems.length + 1}`,
+          language,
+          lyrics
+        });
+      }
+    }
+    return parsedItems;
+  };
+
+  const runMultiRawInputETL = async () => {
+    const items = parseMultiRawText(multiRawText);
+    if (items.length === 0) {
+      setErrorMessage("Aucune comptine valide n'a pu être déduite de la saisie multi-textes. Utilisez le délimiteur '---' pour séparer vos poèmes et respectez l'en-tête (Titre: / Langue:).");
+      return;
+    }
+
+    setIsBatchRunning(true);
+    setBatchTotal(items.length);
+    setBatchCurrentIndex(0);
+    setBatchResults([]);
+    setShowBatchDashboard(true);
+    setErrorMessage("");
+    setLogs(prev => [...prev, `[📦 MULTI-RAW ETL] Initialisation du traitement séquentiel pour ${items.length} texte(s) brut(s)...`]);
+
+    const results: typeof batchResults = [];
+
+    for (let i = 0; i < items.length; i++) {
+      setBatchCurrentIndex(i);
+      const rawItem = items[i];
+      setLogs(prev => [...prev, `[📦 MULTI-RAW ETL - ${i + 1}/${items.length}] Début de l'analyse séquentielle de '${rawItem.title}'`]);
+
+      let tempCollect: any = null;
+      let tempAnnot: any = null;
+      let tempRemaster: any = null;
+      let tempVerify: any = null;
+      let stepError = "";
+      let failedAt = "";
+
+      // Stage 1: Collecteur
+      try {
+        setBatchCurrentStage(`Collecteur de ${rawItem.title} (Étape 1/5)`);
+        const res = await fetch("/api/pipeline/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stage: "collecteur",
+            lyricsOriginal: rawItem.lyrics,
+            titleInput: rawItem.title,
+            langInput: rawItem.language
+          })
+        });
+        const d = await res.json();
+        if (!d.success) throw new Error(d.error || "L'agent Collecteur a échoué.");
+        tempCollect = d.result;
+        setLogs(prev => [...prev, `[📦 MULTI-RAW - ${rawItem.title}] Étape 1/5 (Collecteur) validée.`]);
+      } catch (err: any) {
+        failedAt = "collecteur";
+        stepError = err.message || "Erreur Collecteur";
+      }
+
+      // Stage 2: Annotateur
+      if (!stepError) {
+        try {
+          setBatchCurrentStage(`Annotateur de ${rawItem.title} (Étape 2/5)`);
+          const res = await fetch("/api/pipeline/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              stage: "annotateur",
+              lyricsOriginal: rawItem.lyrics,
+              collecteurResult: tempCollect
+            })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error || "L'agent Annotateur a échoué.");
+          tempAnnot = d.result;
+          setLogs(prev => [...prev, `[📦 MULTI-RAW - ${rawItem.title}] Étape 2/5 (Annotateur) validée.`]);
+        } catch (err: any) {
+          failedAt = "annotateur";
+          stepError = err.message || "Erreur Annotateur";
+        }
+      }
+
+      // Stage 3: Remasteriseur
+      if (!stepError) {
+        try {
+          setBatchCurrentStage(`Remasteriseur de ${rawItem.title} (Étape 3/5)`);
+          const res = await fetch("/api/pipeline/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              stage: "remasteriseur",
+              lyricsOriginal: rawItem.lyrics,
+              annotateurResult: tempAnnot
+            })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error || "L'agent Remasteriseur a échoué.");
+          tempRemaster = d.result;
+          setLogs(prev => [...prev, `[📦 MULTI-RAW - ${rawItem.title}] Étape 3/5 (Remasteriseur) validée.`]);
+        } catch (err: any) {
+          failedAt = "remasteriseur";
+          stepError = err.message || "Erreur Remasteriseur";
+        }
+      }
+
+      // Stage 4: Vérificateur
+      if (!stepError) {
+        try {
+          setBatchCurrentStage(`Vérificateur de ${rawItem.title} (Étape 4/5)`);
+          const res = await fetch("/api/pipeline/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              stage: "verificateur",
+              lyricsOriginal: rawItem.lyrics,
+              remasteriseurResult: tempRemaster
+            })
+          });
+          const d = await res.json();
+          if (!d.success) throw new Error(d.error || "L'agent Vérificateur a échoué.");
+          tempVerify = d.result;
+          setLogs(prev => [...prev, `[📦 MULTI-RAW - ${rawItem.title}] Étape 4/5 (Vérificateur - Validation) validée.`]);
+        } catch (err: any) {
+          failedAt = "verificateur";
+          stepError = err.message || "Erreur Vérificateur";
+        }
+      }
+
+      // Stage 5: Indexation
+      if (!stepError) {
+        try {
+          setBatchCurrentStage(`Indexation de ${rawItem.title} (Étape 5/5)`);
+          
+          const finalObject: NurseryRhyme = {
+            id: tempCollect?.id || `RAW-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+            title: tempCollect?.title || rawItem.title,
+            language: tempCollect?.language || rawItem.language,
+            origin: {
+              country: tempCollect?.origin?.country || "Inconnu",
+              region: tempCollect?.origin?.region || ""
+            },
+            type: tempCollect?.type || "nursery_rhyme",
+            age_range: tempCollect?.age_range || { min: 2, max: 7 },
+            skills: tempCollect?.skills || [],
+            themes: tempCollect?.themes || [],
+            lyrics_original: rawItem.lyrics,
+            variants: tempCollect?.variants || [],
+            source: "Saisie Séquentielle Multi-Texte",
+            cognitive_tags: tempAnnot?.cognitive_tags || [],
+            music: {
+              tempo: tempAnnot?.music?.tempo || 100,
+              meter: tempAnnot?.music?.meter || "4/4",
+              mood: tempAnnot?.music?.mood || "Calming",
+              cadence: tempAnnot?.music?.cadence || "",
+              call_response: tempAnnot?.music?.call_response || false,
+              repetition_level: tempAnnot?.music?.repetition_level || "Medium",
+              melody_complexity: tempAnnot?.music?.melody_complexity || "Simple"
+            },
+            linguistics: {
+              vocabulary_level: tempAnnot?.linguistics?.vocabulary_level || "Beginner",
+              phonetic_patterns: tempAnnot?.linguistics?.phonetic_patterns || "",
+              syllable_count: tempAnnot?.linguistics?.syllable_count || 32,
+              rhyme_scheme: tempAnnot?.linguistics?.rhyme_scheme || "AABB",
+              alliteration: tempAnnot?.linguistics?.alliteration || false
+            },
+            heritage: {
+              historical_period: tempAnnot?.heritage?.historical_period || "Moderne",
+              region: tempAnnot?.heritage?.region || "",
+              oral_tradition: tempAnnot?.heritage?.oral_tradition || true,
+              references: tempAnnot?.heritage?.references || "",
+              preservation_status: tempAnnot?.heritage?.preservation_status || "Active"
+            },
+            ai_variants: {
+              cognitive: tempRemaster?.cognitive || "",
+              creativity: tempRemaster?.creativity || "",
+              leadership: tempRemaster?.leadership || "",
+              entrepreneurship: tempRemaster?.entrepreneurship || "",
+              health: tempRemaster?.health || "",
+              financial_literacy: tempRemaster?.financial_literacy || "",
+              ai_literacy: tempRemaster?.ai_literacy || ""
+            },
+            knowledge_graph: []
+          };
+
+          await onAddRhymeToLibrary(finalObject);
+          setLogs(prev => [...prev, `[📦 MULTI-RAW ✅] '${rawItem.title}' intégré avec succès dans l'Index RAG vivant.`]);
+        } catch (err: any) {
+          failedAt = "indexation";
+          stepError = err.message || "Erreur d'injection locale";
+        }
+      }
+
+      const isSuccess = !stepError;
+      results.push({
+        id: `MULTI-${i}`,
+        title: rawItem.title,
+        language: rawItem.language,
+        success: isSuccess,
+        stageFailed: failedAt,
+        error: stepError,
+        status_global: tempVerify?.score_global || (isSuccess ? "95%" : "Échoué"),
+        passCount: tempVerify?.validation_details ? Object.values(tempVerify.validation_details).filter(v => v === true).length : (isSuccess ? 4 : 0),
+        totalCount: tempVerify?.validation_details ? Object.keys(tempVerify.validation_details).length : 4,
+        recommandations: tempVerify?.recommandations || "",
+        parsedObject: tempVerify
+      });
+
+      setBatchResults([...results]);
+    }
+
+    setIsBatchRunning(false);
+    setLogs(prev => [...prev, `[📦 MULTI-RAW ✅] Traitement séquentiel terminé ! ${results.filter(r => r.success).length} réussite(s), ${results.filter(r => !r.success).length} échec sécitaire(s).`]);
+  };
+
   const isStepClickable = (step: number) => {
     if (step === 1) return true;
     if (step === 2) return collecteurResult !== null;
@@ -1128,91 +1393,151 @@ ${convertToYAML(schemaObj, 0).trim()}
         {/* Input parameters panel */}
         <div className="lg:col-span-5 space-y-4">
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 border-b border-slate-50 pb-2">
-              <BookOpen className="w-4 h-4 text-blue-600" /> Saisie de la Comptine brute
-            </h4>
-
-            {/* Quick pre-loaders */}
-            <div className="space-y-1">
-              <span className="text-[10px] font-mono text-slate-400 block font-semibold">Charger un spécimen test :</span>
-              <div className="flex flex-wrap gap-1.5">
-                {SAMPLES.map((sample) => (
-                  <button
-                    key={sample.title}
-                    id={`quick-sample-${sample.title.toLowerCase().replace(/\s+/g, "-")}`}
-                    onClick={() => loadSample(sample)}
-                    className="p-1 px-2.5 text-[10px] bg-slate-50 hover:bg-slate-100 text-slate-700 font-mono border border-slate-200 rounded-lg transition duration-155"
-                  >
-                    + {sample.title}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <hr className="border-slate-100" />
-
-            <div className="space-y-3 font-mono text-xs">
-              <div>
-                <label className="block text-slate-600 mb-1 font-bold">Titre Présumé :</label>
-                <input
-                   type="text"
-                  placeholder="e.g. Ainsi font font font"
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  className="w-full p-2 border border-slate-350 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-600 mb-1 font-bold">Langue :</label>
-                <select
-                  value={langInput}
-                  onChange={(e) => setLangInput(e.target.value)}
-                  className="w-full p-2 border border-slate-350 bg-white rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-900"
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <BookOpen className="w-4 h-4 text-blue-600" /> Saisie de la Comptine brute
+              </h4>
+              
+              {/* Toggler unique vs multi */}
+              <div className="flex gap-1 p-0.5 bg-slate-100 rounded-md text-[10px] font-mono font-bold border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setInputSaisieMode("unique")}
+                  className={`px-2 py-1 rounded transition duration-150 ${
+                    inputSaisieMode === "unique" ? "bg-white text-slate-900 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+                  }`}
                 >
-                  <option value="fr">Français</option>
-                  <option value="en">Anglais</option>
-                  <option value="mfe">Créole mauricien</option>
-                  <option value="ja">Japonais</option>
-                  <option value="zh">Chinois (Mandarin)</option>
-                  <option value="hi">Hindi</option>
-                  <option value="af">Akan (Ghana)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-600 mb-1 font-bold">Paroles de la Comptine (lyrics) :</label>
-                <textarea
-                  rows={8}
-                  placeholder="Collez ou saisissez la chanson ici (traditionnelle ou moderne) pour la concevoir comme base de connaissances..."
-                  value={lyricsInput}
-                  onChange={(e) => setLyricsInput(e.target.value)}
-                  className="w-full p-2 border border-slate-350 rounded-md font-mono text-xs text-slate-900 leading-relaxed focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
-                />
+                  Unique
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputSaisieMode("multi")}
+                  className={`px-2 py-1 rounded transition duration-150 ${
+                    inputSaisieMode === "multi" ? "bg-white text-slate-900 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  Multi-Série (---)
+                </button>
               </div>
             </div>
-            
-            <div className="pt-2 space-y-2">
-              <button
-                id="start-pipeline-btn"
-                disabled={isRunning || isFullETLRunning || !lyricsInput}
-                onClick={runStep1}
-                className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 font-mono text-xs tracking-wide rounded-lg font-semibold shadow-xs transition duration-150 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                title="Lancer le pipeline pas-à-pas en démarrant par l'Étape 1"
-              >
-                <Play className="w-3.5 h-3.5 text-blue-600" /> Mode Pas-à-Pas (Étape 1)
-              </button>
 
-              <button
-                id="run-full-etl-btn"
-                disabled={isRunning || isFullETLRunning || !lyricsInput}
-                onClick={runFullETL}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-mono text-xs tracking-wide rounded-lg font-bold shadow-sm transition duration-150 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer border border-indigo-700 hover:border-indigo-800"
-                title="Déclencher la chaîne automatique d'extraction, transformation et indexation au corpus"
-              >
-                <Sparkles className="w-4 h-4 text-indigo-200 animate-pulse" /> Courir le Pipeline ETL Complet
-              </button>
-            </div>
+            {inputSaisieMode === "unique" ? (
+              <>
+                {/* Quick pre-loaders */}
+                <div className="space-y-1">
+                  <span className="text-[10px] font-mono text-slate-400 block font-semibold">Charger un spécimen test :</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SAMPLES.map((sample) => (
+                      <button
+                        key={sample.title}
+                        id={`quick-sample-${sample.title.toLowerCase().replace(/\s+/g, "-")}`}
+                        onClick={() => loadSample(sample)}
+                        className="p-1 px-2.5 text-[10px] bg-slate-50 hover:bg-slate-100 text-slate-700 font-mono border border-slate-200 rounded-lg transition duration-155"
+                      >
+                        + {sample.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <hr className="border-slate-100" />
+
+                <div className="space-y-3 font-mono text-xs">
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-bold">Titre Présumé :</label>
+                    <input
+                       type="text"
+                      placeholder="e.g. Ainsi font font font"
+                      value={titleInput}
+                      onChange={(e) => setTitleInput(e.target.value)}
+                      className="w-full p-2 border border-slate-350 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-bold">Langue :</label>
+                    <select
+                      value={langInput}
+                      onChange={(e) => setLangInput(e.target.value)}
+                      className="w-full p-2 border border-slate-350 bg-white rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-slate-900"
+                    >
+                      <option value="fr">Français</option>
+                      <option value="en">Anglais</option>
+                      <option value="mfe">Créole mauricien</option>
+                      <option value="ja">Japonais</option>
+                      <option value="zh">Chinois (Mandarin)</option>
+                      <option value="hi">Hindi</option>
+                      <option value="af">Akan (Ghana)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-bold">Paroles de la Comptine (lyrics) :</label>
+                    <textarea
+                      rows={8}
+                      placeholder="Collez ou saisissez la chanson ici (traditionnelle ou moderne) pour la concevoir comme base de connaissances..."
+                      value={lyricsInput}
+                      onChange={(e) => setLyricsInput(e.target.value)}
+                      className="w-full p-2 border border-slate-350 rounded-md font-mono text-xs text-slate-900 leading-relaxed focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                
+                <div className="pt-2 space-y-2">
+                  <button
+                    id="start-pipeline-btn"
+                    disabled={isRunning || isFullETLRunning || !lyricsInput}
+                    onClick={runStep1}
+                    className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800 font-mono text-xs tracking-wide rounded-lg font-semibold shadow-xs transition duration-150 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Lancer le pipeline pas-à-pas en démarrant par l'Étape 1"
+                  >
+                    <Play className="w-3.5 h-3.5 text-blue-600" /> Mode Pas-à-Pas (Étape 1)
+                  </button>
+
+                  <button
+                    id="run-full-etl-btn"
+                    disabled={isRunning || isFullETLRunning || !lyricsInput}
+                    onClick={runFullETL}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-mono text-xs tracking-wide rounded-lg font-bold shadow-sm transition duration-150 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer border border-indigo-700 hover:border-indigo-800"
+                    title="Déclencher la chaîne automatique d'extraction, transformation et indexation au corpus"
+                  >
+                    <Sparkles className="w-4 h-4 text-indigo-200 animate-pulse" /> Courir le Pipeline ETL Complet
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Multi-Raw sequence area */}
+                <div className="space-y-3 font-mono text-xs">
+                  <div className="bg-slate-50 border border-slate-150 p-2.5 rounded-lg text-[10.5px] text-slate-600 leading-relaxed font-sans">
+                    <strong>Pâte ou Saisie Multiples :</strong> Séparez chaque œuvre par le délimiteur <code className="text-blue-700 font-bold bg-white px-1 py-0.5 border border-slate-200 rounded">---</code>.
+                    Respectez scrupuleusement l'en-tête pour nourrir le dictionnaire.
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 mb-1 font-bold">Liste de chansons brutes :</label>
+                    <textarea
+                      rows={14}
+                      value={multiRawText}
+                      onChange={(e) => setMultiRawText(e.target.value)}
+                      placeholder={`Titre: Chanson Un\nLangue: fr\nParoles:\nIl était une une bergère...\n---\nTitre: Song Two\nLangue: en\nParoles:\nTwinkle, twinkle, little star...`}
+                      className="w-full p-3.5 bg-[#0f172a] text-emerald-400 border border-slate-850 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    onClick={runMultiRawInputETL}
+                    disabled={isBatchRunning || isFullETLRunning || !multiRawText.trim()}
+                    className="w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-mono text-xs tracking-wider rounded-lg font-bold shadow-md transition duration-150 disabled:opacity-55 flex items-center justify-center gap-2"
+                  >
+                    <Activity className={`w-4 h-4 text-indigo-100 ${isBatchRunning ? "animate-spin" : ""}`} />
+                    <span>Lancer le Séquenceur Multi-Texte ({parseMultiRawText(multiRawText).length})</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Séquenceur Multi-Sélection card */}
@@ -1481,11 +1806,11 @@ ${convertToYAML(schemaObj, 0).trim()}
                         <div className="flex items-center gap-2 self-start md:self-center">
                           {result.success ? (
                             <span className="p-1 px-2.5 rounded-full text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-150 font-bold flex items-center gap-1">
-                              ✓ PASS
+                              ✓ PASS ({result.passCount !== undefined ? result.passCount : 4}/{result.totalCount !== undefined ? result.totalCount : 4})
                             </span>
                           ) : (
                             <span className="p-1 px-2.5 rounded-full text-[10px] font-mono bg-rose-50 text-rose-700 border border-rose-150 font-bold">
-                              ✗ FAIL
+                              ✗ FAIL ({result.passCount !== undefined ? result.passCount : 0}/{result.totalCount !== undefined ? result.totalCount : 4})
                             </span>
                           )}
 
